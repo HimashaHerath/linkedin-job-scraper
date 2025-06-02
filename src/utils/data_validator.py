@@ -27,6 +27,25 @@ class JobDataValidator:
             r'^([^,]+),?\s*([A-Za-z\s]+)$',  # Extract city, country/region
         ]
     
+    def is_valid_job(self, job_data: Dict) -> bool:
+        """
+        Simple validation method that returns True if job has basic required fields.
+        
+        Args:
+            job_data (Dict): Job data to validate
+            
+        Returns:
+            bool: True if job is valid, False otherwise
+        """
+        if not job_data.get('title'):
+            return False
+        
+        title = str(job_data['title']).strip()
+        if len(title) < 3 or not re.search(r'[a-zA-Z]', title):
+            return False
+        
+        return True
+    
     def validate_job_data(self, job_data: Dict) -> tuple[bool, List[str]]:
         """
         Validate a single job data dictionary.

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-LinkedIn Job Scraper - Main Entry Point
-
-A comprehensive LinkedIn job scraper with both basic (requests) and advanced (Selenium) options.
-"""
 
 import sys
 import argparse
@@ -11,7 +6,6 @@ import signal
 from pathlib import Path
 from typing import Optional
 
-# Add src directory to Python path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from scrapers.linkedin_scraper import LinkedInJobScraper
@@ -22,16 +16,7 @@ from config import get_config
 
 
 class ScraperManager:
-    """Manages the LinkedIn job scraping process."""
-    
     def __init__(self, scraper_type: str = "basic", config_file: Optional[str] = None):
-        """
-        Initialize the scraper manager.
-        
-        Args:
-            scraper_type (str): Type of scraper ('basic' or 'selenium')
-            config_file (str, optional): Path to config file
-        """
         self.scraper_type = scraper_type
         self.config = get_config(config_file)
         self.logger = get_scraper_logger(scraper_type)
@@ -39,11 +24,9 @@ class ScraperManager:
         self.scraper = None
         self.interrupted = False
         
-        # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
     
     def _signal_handler(self, signum, frame):
-        """Handle interrupt signals gracefully."""
         self.interrupted = True
         self.logger.info("Interrupt signal received. Shutting down gracefully...")
         if self.scraper and hasattr(self.scraper, 'close_driver'):
@@ -51,25 +34,20 @@ class ScraperManager:
         sys.exit(0)
     
     def run_interactive(self):
-        """Run the scraper in interactive mode."""
         print("🔍 LinkedIn Job Scraper")
         print("=" * 50)
         
         try:
-            # Get user preferences
             scraper_choice = self._get_scraper_choice()
             if scraper_choice != self.scraper_type:
                 self.scraper_type = scraper_choice
                 self.logger = get_scraper_logger(scraper_choice)
             
-            # Get search parameters
             search_params = self._get_search_parameters()
             
-            # Initialize and run scraper
             self._initialize_scraper()
             results = self._run_scraper(search_params)
             
-            # Process and save results
             if results:
                 self._process_results(results)
             else:
@@ -82,11 +60,9 @@ class ScraperManager:
             print(f"❌ An error occurred: {str(e)}")
     
     def run_with_args(self, args):
-        """Run the scraper with command-line arguments."""
         try:
             self.logger.info(f"Starting {self.scraper_type} scraper with arguments")
             
-            # Prepare search parameters
             search_params = {
                 'keywords': args.keywords,
                 'location': args.location,
@@ -94,15 +70,12 @@ class ScraperManager:
                 'delay_range': self.config.get_delay_range(self.scraper_type)
             }
             
-            # Add Selenium-specific parameters
             if self.scraper_type == "selenium":
                 search_params['headless'] = args.headless
             
-            # Initialize and run scraper
             self._initialize_scraper(args.headless if self.scraper_type == "selenium" else None)
             results = self._run_scraper(search_params)
             
-            # Process results
             if results:
                 self._process_results(results)
                 return True
@@ -115,10 +88,9 @@ class ScraperManager:
             return False
     
     def _get_scraper_choice(self) -> str:
-        """Get user's scraper choice."""
         print("\nAvailable scrapers:")
-        print("1. Basic Scraper (requests + BeautifulSoup) - Fast, lightweight")
-        print("2. Selenium Scraper (WebDriver) - More reliable, handles JavaScript")
+        print("1. Basic Scraper (requests + BeautifulSoup) - Recommended")
+        print("2. Selenium Scraper (WebDriver) - May face LinkedIn restrictions")
         
         while True:
             choice = input("\nChoose scraper (1 or 2, default 1): ").strip()
@@ -130,10 +102,8 @@ class ScraperManager:
                 print("Please enter 1 or 2.")
     
     def _get_search_parameters(self) -> dict:
-        """Get search parameters from user input."""
         params = {}
         
-        # Required: Keywords
         while True:
             keywords = input("\n📝 Enter job keywords (e.g., 'python developer'): ").strip()
             if keywords:
@@ -141,11 +111,9 @@ class ScraperManager:
                 break
             print("Keywords are required. Please try again.")
         
-        # Optional: Location
         location = input("📍 Enter location (e.g., 'New York, NY') [optional]: ").strip()
         params['location'] = location
         
-        # Max pages
         max_pages_limit = (self.config.scraping.max_pages_selenium 
                           if self.scraper_type == "selenium" 
                           else self.config.scraping.max_pages_basic)
@@ -162,7 +130,6 @@ class ScraperManager:
             except ValueError:
                 print("Please enter a valid number.")
         
-        # Selenium-specific options
         if self.scraper_type == "selenium":
             headless = input("🖥️  Run in headless mode? (y/n, default y): ").strip().lower()
             params['headless'] = headless != 'n'
@@ -172,7 +139,6 @@ class ScraperManager:
         return params
     
     def _initialize_scraper(self, headless: Optional[bool] = None):
-        """Initialize the appropriate scraper."""
         try:
             if self.scraper_type == "selenium":
                 headless = headless if headless is not None else self.config.selenium.headless
@@ -192,86 +158,62 @@ class ScraperManager:
             raise
     
     def _run_scraper(self, params: dict) -> list:
-        """Run the scraper with given parameters."""
         self.logger.info(f"Starting scrape: {params}")
         
         print(f"\n🚀 Starting {self.scraper_type} scrape:")
         print(f"   Keywords: {params['keywords']}")
         print(f"   Location: {params['location'] or 'Any'}")
         print(f"   Max pages: {params['max_pages']}")
-        if self.scraper_type == "selenium":
-            print(f"   Headless: {params.get('headless', True)}")
         print("-" * 50)
         
-        # Remove headless from params as search_jobs doesn't accept it
-        scraper_params = params.copy()
-        if 'headless' in scraper_params:
-            del scraper_params['headless']
-        
-        return self.scraper.search_jobs(**scraper_params)
+        return self.scraper.search_jobs(**params)
     
     def _process_results(self, results: list):
-        """Process and save scraping results."""
         print(f"\n✅ Scraping completed! Found {len(results)} jobs.")
         
-        # Validate and clean data if enabled
-        if self.config.scraping.validate_data:
-            print("🔍 Validating and cleaning data...")
-            
-            cleaned_results = []
-            validation_errors = []
-            
-            for i, job in enumerate(results):
-                cleaned_job = self.validator.clean_job_data(job)
-                is_valid, errors = self.validator.validate_job_data(cleaned_job)
-                
-                if is_valid:
-                    cleaned_results.append(cleaned_job)
-                else:
-                    validation_errors.extend([f"Job {i+1}: {error}" for error in errors])
-            
-            if validation_errors:
-                self.logger.warning(f"Found {len(validation_errors)} validation errors")
-                for error in validation_errors[:10]:  # Show first 10 errors
-                    self.logger.warning(error)
-            
-            # Remove duplicates if enabled
-            if self.config.scraping.remove_duplicates:
-                original_count = len(cleaned_results)
-                cleaned_results = self.validator.remove_duplicates(cleaned_results)
-                removed_count = original_count - len(cleaned_results)
-                if removed_count > 0:
-                    print(f"🔄 Removed {removed_count} duplicate jobs")
-            
-            results = cleaned_results
-            print(f"✨ Data validation complete. Final count: {len(results)} jobs")
+        print("🔍 Validating and cleaning data...")
+        original_count = len(results)
+        
+        # Remove duplicates based on title + company
+        seen = set()
+        unique_results = []
+        for job in results:
+            signature = f"{job.get('title', '')}_{job.get('company', '')}"
+            if signature not in seen:
+                seen.add(signature)
+                unique_results.append(job)
+        
+        removed_duplicates = original_count - len(unique_results)
+        if removed_duplicates > 0:
+            print(f"🔄 Removed {removed_duplicates} duplicate jobs")
+            self.scraper.jobs_data = unique_results
+        
+        # Validate data
+        valid_jobs = [job for job in unique_results if self.validator.is_valid_job(job)]
+        invalid_count = len(unique_results) - len(valid_jobs)
+        
+        if invalid_count > 0:
+            print(f"⚠️  Filtered out {invalid_count} invalid jobs")
+            self.scraper.jobs_data = valid_jobs
+        
+        print(f"✨ Data validation complete. Final count: {len(valid_jobs)} jobs")
         
         # Save results
-        if results:
-            saved_files = []
-            
-            if self.config.output.save_csv:
-                csv_filename = f"{self.scraper_type}_{self.config.output.csv_filename}"
-                if self.scraper.save_to_csv(csv_filename):
-                    saved_files.append(csv_filename)
-            
-            if self.config.output.save_json:
-                json_filename = f"{self.scraper_type}_{self.config.output.json_filename}"
-                if self.scraper.save_to_json(json_filename):
-                    saved_files.append(json_filename)
-            
-            if saved_files:
-                print(f"\n💾 Files saved to '{self.config.output.data_dir}/' directory:")
-                for filename in saved_files:
-                    print(f"   - {filename}")
-            
-            # Print summary
-            self.scraper.print_summary()
+        csv_saved = self.scraper.save_to_csv()
+        json_saved = self.scraper.save_to_json()
         
-        return results
+        if csv_saved and json_saved:
+            print(f"\n💾 Files saved to '{self.config.output.data_dir}' directory:")
+            print(f"   - basic_linkedin_jobs.csv")
+            print(f"   - basic_linkedin_jobs.json")
+        
+        # Show summary
+        self.scraper.print_summary()
+        
+        # Offer to open files
+        self._offer_file_actions()
     
     def _handle_no_results(self):
-        """Handle the case when no results are found."""
         print("\n❌ No jobs found. This might be due to:")
         print("   • LinkedIn's anti-bot measures")
         print("   • Too restrictive search criteria")
@@ -280,100 +222,81 @@ class ScraperManager:
         
         print("\n💡 Consider:")
         print("   • Using broader search terms")
-        if self.scraper_type == "basic":
-            print("   • Trying the Selenium version for better results")
+        print("   • Trying the Selenium version for better results")
         print("   • Checking your internet connection")
         print("   • Waiting a few minutes before trying again")
-
+    
+    def _offer_file_actions(self):
+        # Optional: Add functionality to open files or perform additional actions
+        pass
 
 def create_parser():
-    """Create command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="LinkedIn Job Scraper - Extract job listings from LinkedIn",
+        description='LinkedIn Job Scraper - Extract job listings from LinkedIn',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --keywords "python developer" --location "San Francisco, CA"
-  %(prog)s --keywords "data scientist" --max-pages 5 --scraper selenium
-  %(prog)s --keywords "software engineer" --headless false --config custom.json
+  python main.py -k "python developer" -l "San Francisco"
+  python main.py --keywords "data scientist" --location "Remote" --max-pages 5
+  python main.py -k "software engineer" -s selenium --headless false
+  python main.py --interactive
         """
     )
     
-    # Required arguments
-    parser.add_argument(
-        '--keywords', '-k',
-        required=True,
-        help='Job keywords to search for (e.g., "python developer")'
-    )
+    parser.add_argument('-k', '--keywords', type=str, required=False,
+                        help='Job keywords to search for (required unless --interactive)')
     
-    # Optional arguments
-    parser.add_argument(
-        '--location', '-l',
-        default='',
-        help='Location to search in (e.g., "New York, NY")'
-    )
+    parser.add_argument('-l', '--location', type=str, default='',
+                        help='Location to search in (optional)')
     
-    parser.add_argument(
-        '--max-pages', '-p',
-        type=int,
-        default=3,
-        help='Maximum number of pages to scrape (default: 3)'
-    )
+    parser.add_argument('-p', '--max-pages', type=int, default=3,
+                        help='Maximum number of pages to scrape (default: 3)')
     
-    parser.add_argument(
-        '--scraper', '-s',
-        choices=['basic', 'selenium'],
-        default='basic',
-        help='Scraper type to use (default: basic)'
-    )
+    parser.add_argument('-s', '--scraper', choices=['basic', 'selenium'], default='basic',
+                        help='Scraper type to use (default: basic)')
     
-    parser.add_argument(
-        '--headless',
-        type=bool,
-        default=True,
-        help='Run Selenium in headless mode (default: True)'
-    )
+    parser.add_argument('--headless', type=str, choices=['true', 'false'], default='true',
+                        help='Run Selenium in headless mode (default: true)')
     
-    parser.add_argument(
-        '--config', '-c',
-        help='Path to custom configuration file'
-    )
+    parser.add_argument('-c', '--config', type=str,
+                        help='Path to custom configuration file')
     
-    parser.add_argument(
-        '--interactive', '-i',
-        action='store_true',
-        help='Run in interactive mode (ignore other arguments)'
-    )
+    parser.add_argument('-i', '--interactive', action='store_true',
+                        help='Run in interactive mode')
+    
+    parser.add_argument('--version', action='version', version='LinkedIn Job Scraper v2.0')
     
     return parser
 
-
 def main():
-    """Main entry point."""
     parser = create_parser()
     args = parser.parse_args()
     
+    # Convert headless string to boolean
+    args.headless = args.headless.lower() == 'true'
+    
     try:
-        # Create scraper manager
-        manager = ScraperManager(
-            scraper_type=args.scraper,
-            config_file=args.config
-        )
+        manager = ScraperManager(scraper_type=args.scraper, config_file=args.config)
         
-        # Run in interactive or command-line mode
-        if args.interactive or len(sys.argv) == 1:
+        if args.interactive:
             manager.run_interactive()
         else:
+            if not args.keywords:
+                print("❌ Keywords are required when not in interactive mode.")
+                print("Use --interactive for guided setup or provide --keywords")
+                parser.print_help()
+                return False
+            
             success = manager.run_with_args(args)
-            sys.exit(0 if success else 1)
+            return success
             
     except KeyboardInterrupt:
-        print("\n\n⚠️  Operation cancelled by user.")
-        sys.exit(1)
+        print("\n⚠️  Operation cancelled by user.")
+        return False
     except Exception as e:
         print(f"❌ Fatal error: {str(e)}")
-        sys.exit(1)
-
+        return False
 
 if __name__ == "__main__":
-    main() 
+    success = main()
+    sys.exit(0 if success else 1) 

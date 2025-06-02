@@ -12,6 +12,8 @@ import os
 from dotenv import load_dotenv
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+import re
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -73,7 +75,8 @@ class LinkedInJobScraper:
     def search_jobs(self, keywords: str = "", location: str = "", 
                    experience_level: str = "", job_type: str = "", 
                    company: str = "", max_pages: int = 5, 
-                   delay_range: Tuple[float, float] = (2, 5)) -> List[Dict]:
+                   delay_range: Tuple[float, float] = (2, 5),
+                   salary_min: str = "", date_posted: str = "") -> List[Dict]:
         """
         Search for jobs on LinkedIn with comprehensive error handling.
         
@@ -85,6 +88,8 @@ class LinkedInJobScraper:
             company (str): Company name filter
             max_pages (int): Maximum number of pages to scrape
             delay_range (tuple): Random delay range between requests in seconds
+            salary_min (str): Minimum salary filter
+            date_posted (str): Date posted filter
             
         Returns:
             List[Dict]: List of job data dictionaries
@@ -101,6 +106,8 @@ class LinkedInJobScraper:
             'f_E': experience_level,
             'f_JT': job_type,
             'f_C': company,
+            'f_SB2': salary_min,
+            'f_TPR': date_posted,
             'sortBy': 'R'  # Sort by relevance
         }
         
@@ -200,51 +207,44 @@ class LinkedInJobScraper:
         Args:
             html_content (str): Raw HTML content to parse
         """
-        try:
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Multiple selector strategies for LinkedIn's changing structure
-            selectors = [
-                'div.job-search-card',
-                'div.base-card',
-                'li.job-result-card',
-                'div.jobs-search-results__list-item',
-                'div[data-entity-urn*="jobPosting"]',
-                'li[data-occludable-job-id]'
-            ]
-            
-            job_cards = []
-            for selector in selectors:
-                job_cards = soup.select(selector)
-                if job_cards:
-                    logger.debug(f"Found {len(job_cards)} job cards using selector: {selector}")
-                    break
-            
-            if not job_cards:
-                logger.warning("No job cards found with any selector")
-                return
-            
-            jobs_parsed = 0
-            jobs_failed = 0
-            
-            for i, card in enumerate(job_cards):
-                try:
-                    job_data = self.extract_job_data(card)
-                    if job_data and self._validate_job_data(job_data):
-                        self.jobs_data.append(job_data)
-                        jobs_parsed += 1
-                    else:
-                        jobs_failed += 1
-                        
-                except Exception as e:
-                    jobs_failed += 1
-                    logger.error(f"Error parsing job card {i + 1}: {str(e)}")
-                    continue
-            
-            logger.info(f"Parsed {jobs_parsed} jobs successfully, {jobs_failed} failed")
-            
-        except Exception as e:
-            logger.error(f"Error parsing HTML content: {str(e)}")
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        selectors = [
+            'div.job-search-card',
+            'div.base-card',
+            'li.job-result-card',
+            'div.jobs-search-results__list-item',
+            'div[data-entity-urn*="jobPosting"]',
+            'li[data-occludable-job-id]'
+        ]
+        
+        job_cards = []
+        for selector in selectors:
+            job_cards = soup.select(selector)
+            if job_cards:
+                logger.debug(f"Found {len(job_cards)} job cards using selector: {selector}")
+                break
+        
+        if not job_cards:
+            logger.warning("No job cards found with any selector")
+            return
+        
+        successful_extractions = 0
+        failed_extractions = 0
+        
+        for job_card in job_cards:
+            try:
+                job_data = self.extract_job_data(job_card)
+                if job_data and self._validate_job_data(job_data):
+                    self.jobs_data.append(job_data)
+                    successful_extractions += 1
+                else:
+                    failed_extractions += 1
+            except Exception as e:
+                failed_extractions += 1
+                logger.debug(f"Error extracting job data: {str(e)}")
+        
+        logger.info(f"Parsed {successful_extractions} jobs successfully, {failed_extractions} failed")
     
     def extract_job_data(self, job_card) -> Optional[Dict]:
         """
@@ -256,62 +256,59 @@ class LinkedInJobScraper:
         Returns:
             Optional[Dict]: Job data dictionary or None if extraction fails
         """
-        try:
-            job_data = {}
-            
-            # Extract job title with multiple fallbacks
-            title_selectors = [
-                'h3 a', 'h3', '.job-title-link', 'a[data-cy="job-title"]',
-                '.job-search-card__title a', '.base-search-card__title a'
-            ]
-            title = self._extract_text_with_fallbacks(job_card, title_selectors)
-            job_data['title'] = title or "N/A"
-            
-            # Extract company name
-            company_selectors = [
-                'h4 a', 'h4', '.job-search-card__subtitle-link', 
-                'a[data-cy="job-company-name"]', '.base-search-card__subtitle a'
-            ]
-            company = self._extract_text_with_fallbacks(job_card, company_selectors)
-            job_data['company'] = company or "N/A"
-            
-            # Extract location
-            location_selectors = [
-                '.job-search-card__location', '[data-cy="job-location"]',
-                '.job-result-card__location', '.base-search-card__metadata'
-            ]
-            location = self._extract_text_with_fallbacks(job_card, location_selectors)
-            job_data['location'] = location or "N/A"
-            
-            # Extract job URL
-            url_selectors = ['a[href*="/jobs/view/"]', 'h3 a', '.job-title-link']
-            job_url = self._extract_url_with_fallbacks(job_card, url_selectors)
-            job_data['job_url'] = job_url or "N/A"
-            
-            # Extract posting date
-            date_elem = job_card.find('time')
-            if date_elem:
-                job_data['posted_date'] = date_elem.get('datetime') or date_elem.get_text(strip=True)
-            else:
-                job_data['posted_date'] = "N/A"
-            
-            # Extract job summary/description
-            summary_selectors = [
-                '.job-search-card__snippet', '.job-result-card__snippet',
-                '.base-search-card__metadata', 'p[data-cy="job-snippet"]'
-            ]
-            summary = self._extract_text_with_fallbacks(job_card, summary_selectors)
-            job_data['summary'] = summary or "N/A"
-            
-            # Add metadata
-            job_data['scraped_at'] = pd.Timestamp.now().isoformat()
-            job_data['source'] = 'linkedin_basic_scraper'
-            
-            return job_data
-            
-        except Exception as e:
-            logger.error(f"Error extracting job data: {str(e)}")
-            return None
+        job_data = {}
+        
+        # Extract job title
+        title_selectors = [
+            'h3 a', 'h3', '.job-title-link', 'a[data-cy="job-title"]',
+            '.job-search-card__title a', '.base-search-card__title a'
+        ]
+        title = self._extract_text_with_fallbacks(job_card, title_selectors)
+        job_data['title'] = title
+        
+        # Extract company name
+        company_selectors = [
+            'h4 a', 'h4', '.job-search-card__subtitle-link', 
+            'a[data-cy="job-company-name"]', '.base-search-card__subtitle a'
+        ]
+        company = self._extract_text_with_fallbacks(job_card, company_selectors)
+        job_data['company'] = company
+        
+        # Extract location
+        location_selectors = [
+            '.job-search-card__location', '[data-cy="job-location"]',
+            '.job-result-card__location', '.base-search-card__metadata'
+        ]
+        location = self._extract_text_with_fallbacks(job_card, location_selectors)
+        job_data['location'] = location
+        
+        # Extract job URL
+        url_selectors = ['a[href*="/jobs/view/"]', 'h3 a', '.job-title-link']
+        job_url = self._extract_url_with_fallbacks(job_card, url_selectors)
+        job_data['job_url'] = job_url
+        
+        # Extract posting date
+        date_elem = job_card.find('time')
+        if date_elem:
+            job_data['posted_date'] = date_elem.get('datetime') or date_elem.get_text(strip=True)
+        else:
+            job_data['posted_date'] = None
+        
+        # Extract job summary
+        summary_selectors = [
+            '.job-search-card__snippet', '.job-result-card__snippet',
+            '.base-search-card__metadata', 'p[data-cy="job-snippet"]'
+        ]
+        summary = self._extract_text_with_fallbacks(job_card, summary_selectors)
+        job_data['summary'] = summary
+        
+        # Extract additional metadata
+        job_data['salary'] = self._extract_salary(job_card)
+        job_data['job_type'] = self._extract_job_type(job_card)
+        job_data['experience_level'] = self._extract_experience_level(job_card)
+        job_data['scraped_at'] = datetime.now().isoformat()
+        
+        return job_data if any(job_data.values()) else None
     
     def _extract_text_with_fallbacks(self, element, selectors: List[str]) -> Optional[str]:
         """Extract text using multiple CSS selector fallbacks."""
@@ -320,8 +317,7 @@ class LinkedInJobScraper:
                 found_element = element.select_one(selector)
                 if found_element:
                     text = found_element.get_text(strip=True)
-                    if text and text != "N/A":
-                        return text
+                    return text if text else None
             except Exception:
                 continue
         return None
@@ -332,12 +328,39 @@ class LinkedInJobScraper:
             try:
                 found_element = element.select_one(selector)
                 if found_element and found_element.get('href'):
-                    href = found_element['href']
+                    href = found_element.get('href')
                     if href.startswith('/'):
-                        href = self.base_url + href
+                        return f"{self.base_url}{href}"
                     return href
             except Exception:
                 continue
+        return None
+    
+    def _extract_salary(self, element) -> Optional[str]:
+        salary_selectors = [
+            '.job-search-card__salary-info',
+            '.job-insight',
+            '[data-test-id="job-salary"]'
+        ]
+        return self._extract_text_with_fallbacks(element, salary_selectors)
+    
+    def _extract_job_type(self, element) -> Optional[str]:
+        job_type_text = self._extract_text_with_fallbacks(element, ['.job-search-card__job-insight'])
+        if job_type_text and ('full-time' in job_type_text.lower() or 'part-time' in job_type_text.lower()):
+            return job_type_text
+        return None
+    
+    def _extract_experience_level(self, element) -> Optional[str]:
+        # Try to extract from job insights or description
+        insights = self._extract_text_with_fallbacks(element, ['.job-search-card__job-insight', '.job-insights'])
+        if insights:
+            insights_lower = insights.lower()
+            if 'entry' in insights_lower or 'junior' in insights_lower:
+                return 'Entry Level'
+            elif 'senior' in insights_lower:
+                return 'Senior Level'
+            elif 'mid' in insights_lower or 'intermediate' in insights_lower:
+                return 'Mid Level'
         return None
     
     def _validate_job_data(self, job_data: Dict) -> bool:
@@ -350,25 +373,27 @@ class LinkedInJobScraper:
         Returns:
             bool: True if data is valid, False otherwise
         """
-        required_fields = ['title', 'company']
+        if not job_data.get('title'):
+            return False
         
-        # Check for required fields
-        for field in required_fields:
-            if not job_data.get(field) or job_data[field] == "N/A":
-                logger.debug(f"Job data missing required field: {field}")
-                return False
+        title = job_data['title'].strip()
+        if len(title) < 3 or not re.search(r'[a-zA-Z]', title):
+            return False
         
-        # Check for duplicate jobs (based on title + company)
-        job_signature = f"{job_data['title']}_{job_data['company']}"
-        for existing_job in self.jobs_data:
-            existing_signature = f"{existing_job['title']}_{existing_job['company']}"
-            if job_signature == existing_signature:
-                logger.debug(f"Duplicate job found: {job_signature}")
-                return False
+        # Clean up company and location data
+        if job_data.get('company'):
+            company = job_data['company'].strip()
+            if not re.search(r'[a-zA-Z]', company):
+                job_data['company'] = None
+        
+        if job_data.get('location'):
+            location = job_data['location'].strip()
+            if not re.search(r'[a-zA-Z]', location):
+                job_data['location'] = None
         
         return True
     
-    def save_to_csv(self, filename: str = "linkedin_jobs.csv") -> bool:
+    def save_to_csv(self, filename: str = "basic_linkedin_jobs.csv") -> bool:
         """
         Save scraped jobs to CSV file with error handling.
         
@@ -384,15 +409,24 @@ class LinkedInJobScraper:
         
         try:
             filepath = self.output_dir / filename
-            df = pd.DataFrame(self.jobs_data)
-            df.to_csv(filepath, index=False, encoding='utf-8')
+            
+            fieldnames = ['title', 'company', 'location', 'posted_date', 'job_url', 
+                         'summary', 'salary', 'job_type', 'experience_level', 'scraped_at']
+            
+            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for job in self.jobs_data:
+                    filtered_job = {k: v for k, v in job.items() if k in fieldnames}
+                    writer.writerow(filtered_job)
+            
             logger.info(f"Saved {len(self.jobs_data)} jobs to {filepath}")
             return True
         except Exception as e:
             logger.error(f"Error saving to CSV: {str(e)}")
             return False
     
-    def save_to_json(self, filename: str = "linkedin_jobs.json") -> bool:
+    def save_to_json(self, filename: str = "basic_linkedin_jobs.json") -> bool:
         """
         Save scraped jobs to JSON file with error handling.
         
@@ -408,8 +442,8 @@ class LinkedInJobScraper:
         
         try:
             filepath = self.output_dir / filename
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(self.jobs_data, f, indent=2, ensure_ascii=False, default=str)
+            with open(filepath, 'w', encoding='utf-8') as jsonfile:
+                json.dump(self.jobs_data, jsonfile, indent=2, ensure_ascii=False)
             logger.info(f"Saved {len(self.jobs_data)} jobs to {filepath}")
             return True
         except Exception as e:
@@ -428,85 +462,88 @@ class LinkedInJobScraper:
             Optional[Dict]: Detailed job information or None if failed
         """
         try:
-            time.sleep(random.uniform(*delay_range))
+            delay = random.uniform(*delay_range)
+            time.sleep(delay)
+            
             self.session.headers['User-Agent'] = self.ua.random
             
             response = self.session.get(job_url, timeout=30)
             
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                details = {
-                    'description': '',
-                    'requirements': '',
-                    'benefits': '',
-                    'job_type': '',
-                    'seniority_level': '',
-                    'industry': '',
-                    'company_size': ''
-                }
-                
-                # Extract job description with multiple selectors
-                desc_selectors = [
-                    '.description__text', '.jobs-description-content__text',
-                    '.jobs-box__html-content', '[data-cy="job-description"]'
-                ]
-                
-                for selector in desc_selectors:
-                    desc_elem = soup.select_one(selector)
-                    if desc_elem:
-                        details['description'] = desc_elem.get_text(strip=True)
-                        break
-                
-                return details
-            else:
-                logger.warning(f"Failed to get job details. Status: {response.status_code}")
+            if response.status_code != 200:
+                logger.warning(f"Failed to fetch job details: HTTP {response.status_code}")
                 return None
-                
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            details = {}
+            
+            # Extract detailed job description
+            description_selectors = [
+                '.show-more-less-html__markup',
+                '.job-view-description',
+                '.description__text'
+            ]
+            details['description'] = self._extract_text_with_fallbacks(soup, description_selectors)
+            
+            # Extract job criteria/requirements
+            criteria_elements = soup.select('.job-criteria__text')
+            if criteria_elements:
+                details['criteria'] = [elem.get_text(strip=True) for elem in criteria_elements]
+            
+            return details
+            
         except Exception as e:
-            logger.error(f"Error getting job details from {job_url}: {str(e)}")
+            logger.error(f"Error fetching job details: {str(e)}")
             return None
     
     def print_summary(self) -> None:
         """Print a comprehensive summary of scraped jobs."""
         if not self.jobs_data:
-            print("No jobs found.")
+            print("No job data available")
             return
         
-        try:
-            df = pd.DataFrame(self.jobs_data)
-            
-            print(f"\n{'='*50}")
-            print(f"LinkedIn Job Scraping Summary")
-            print(f"{'='*50}")
-            print(f"Total jobs found: {len(df)}")
-            print(f"Unique companies: {df['company'].nunique()}")
-            print(f"Unique locations: {df['location'].nunique()}")
-            print(f"Jobs with valid URLs: {(df['job_url'] != 'N/A').sum()}")
-            
+        print("=" * 50)
+        print("LinkedIn Job Scraping Summary")
+        print("=" * 50)
+        print(f"Total jobs found: {len(self.jobs_data)}")
+        
+        companies = [job.get('company') for job in self.jobs_data if job.get('company')]
+        unique_companies = list(set(companies))
+        print(f"Unique companies: {len(unique_companies)}")
+        
+        locations = [job.get('location') for job in self.jobs_data if job.get('location')]
+        unique_locations = list(set(locations))
+        print(f"Unique locations: {len(unique_locations)}")
+        
+        valid_urls = [job for job in self.jobs_data if job.get('job_url')]
+        print(f"Jobs with valid URLs: {len(valid_urls)}")
+        
+        # Top companies by job count
+        if companies:
+            from collections import Counter
+            company_counts = Counter(companies)
             print(f"\nTop 5 companies by job count:")
-            company_counts = df['company'].value_counts().head()
-            for company, count in company_counts.items():
+            for company, count in company_counts.most_common(5):
                 print(f"  {company}: {count}")
-            
+        
+        # Top locations
+        if locations:
+            from collections import Counter
+            location_counts = Counter(locations)
             print(f"\nTop 5 locations:")
-            location_counts = df['location'].value_counts().head()
-            for location, count in location_counts.items():
+            for location, count in location_counts.most_common(5):
                 print(f"  {location}: {count}")
-            
-            # Data quality metrics
-            valid_titles = (df['title'] != 'N/A').sum()
-            valid_companies = (df['company'] != 'N/A').sum()
-            valid_locations = (df['location'] != 'N/A').sum()
-            
-            print(f"\nData Quality:")
-            print(f"  Valid titles: {valid_titles}/{len(df)} ({(valid_titles/len(df)*100):.1f}%)")
-            print(f"  Valid companies: {valid_companies}/{len(df)} ({(valid_companies/len(df)*100):.1f}%)")
-            print(f"  Valid locations: {valid_locations}/{len(df)} ({(valid_locations/len(df)*100):.1f}%)")
-            
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            print("Error generating job summary.")
+        
+        # Data quality metrics
+        valid_titles = sum(1 for job in self.jobs_data if job.get('title'))
+        valid_companies = sum(1 for job in self.jobs_data if job.get('company'))
+        valid_locations = sum(1 for job in self.jobs_data if job.get('location'))
+        
+        total = len(self.jobs_data)
+        print(f"\nData Quality:")
+        print(f"  Valid titles: {valid_titles}/{total} ({valid_titles/total*100:.1f}%)")
+        print(f"  Valid companies: {valid_companies}/{total} ({valid_companies/total*100:.1f}%)")
+        print(f"  Valid locations: {valid_locations}/{total} ({valid_locations/total*100:.1f}%)")
     
     def clear_data(self) -> None:
         """Clear all scraped job data."""
