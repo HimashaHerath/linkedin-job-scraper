@@ -9,17 +9,15 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from scrapers.linkedin_scraper import LinkedInJobScraper
-from scrapers.linkedin_selenium_scraper import LinkedInSeleniumScraper
 from utils.logger import get_scraper_logger
 from utils.data_validator import JobDataValidator
 from config import get_config
 
 
 class ScraperManager:
-    def __init__(self, scraper_type: str = "basic", config_file: Optional[str] = None):
-        self.scraper_type = scraper_type
+    def __init__(self, config_file: Optional[str] = None):
         self.config = get_config(config_file)
-        self.logger = get_scraper_logger(scraper_type)
+        self.logger = get_scraper_logger("advanced")
         self.validator = JobDataValidator()
         self.scraper = None
         self.interrupted = False
@@ -29,20 +27,13 @@ class ScraperManager:
     def _signal_handler(self, signum, frame):
         self.interrupted = True
         self.logger.info("Interrupt signal received. Shutting down gracefully...")
-        if self.scraper and hasattr(self.scraper, 'close_driver'):
-            self.scraper.close_driver()
         sys.exit(0)
     
     def run_interactive(self):
-        print("🔍 LinkedIn Job Scraper")
+        print("🔍 LinkedIn Job Scraper - 2025 Edition")
         print("=" * 50)
         
         try:
-            scraper_choice = self._get_scraper_choice()
-            if scraper_choice != self.scraper_type:
-                self.scraper_type = scraper_choice
-                self.logger = get_scraper_logger(scraper_choice)
-            
             search_params = self._get_search_parameters()
             
             self._initialize_scraper()
@@ -61,19 +52,15 @@ class ScraperManager:
     
     def run_with_args(self, args):
         try:
-            self.logger.info(f"Starting {self.scraper_type} scraper with arguments")
+            self.logger.info(f"Starting advanced scraper with arguments")
             
             search_params = {
                 'keywords': args.keywords,
                 'location': args.location,
-                'max_pages': args.max_pages,
-                'delay_range': self.config.get_delay_range(self.scraper_type)
+                'max_pages': args.max_pages
             }
             
-            if self.scraper_type == "selenium":
-                search_params['headless'] = args.headless
-            
-            self._initialize_scraper(args.headless if self.scraper_type == "selenium" else None)
+            self._initialize_scraper()
             results = self._run_scraper(search_params)
             
             if results:
@@ -87,21 +74,15 @@ class ScraperManager:
             self.logger.error(f"Error running scraper: {str(e)}")
             return False
     
-    def _get_scraper_choice(self) -> str:
-        print("\nAvailable scrapers:")
-        print("1. Basic Scraper (requests + BeautifulSoup) - Recommended")
-        print("2. Selenium Scraper (WebDriver) - May face LinkedIn restrictions")
-        
-        while True:
-            choice = input("\nChoose scraper (1 or 2, default 1): ").strip()
-            if choice == "2":
-                return "selenium"
-            elif choice == "1" or choice == "":
-                return "basic"
-            else:
-                print("Please enter 1 or 2.")
+    def _show_scraper_info(self):
+        print("\nUsing Advanced LinkedIn Scraper 2025:")
+        print("• HTTPX with HTTP/2 support for superior performance")
+        print("• Advanced anti-detection and behavioral simulation")
+        print("• Intelligent rate limiting and session management")
+        print("• AI-resistant fingerprinting techniques")
     
     def _get_search_parameters(self) -> dict:
+        self._show_scraper_info()
         params = {}
         
         while True:
@@ -114,9 +95,7 @@ class ScraperManager:
         location = input("📍 Enter location (e.g., 'New York, NY') [optional]: ").strip()
         params['location'] = location
         
-        max_pages_limit = (self.config.scraping.max_pages_selenium 
-                          if self.scraper_type == "selenium" 
-                          else self.config.scraping.max_pages_basic)
+        max_pages_limit = self.config.scraping.max_pages_basic
         
         while True:
             try:
@@ -130,37 +109,24 @@ class ScraperManager:
             except ValueError:
                 print("Please enter a valid number.")
         
-        if self.scraper_type == "selenium":
-            headless = input("🖥️  Run in headless mode? (y/n, default y): ").strip().lower()
-            params['headless'] = headless != 'n'
-        
-        params['delay_range'] = self.config.get_delay_range(self.scraper_type)
-        
         return params
     
-    def _initialize_scraper(self, headless: Optional[bool] = None):
+    def _initialize_scraper(self):
         try:
-            if self.scraper_type == "selenium":
-                headless = headless if headless is not None else self.config.selenium.headless
-                self.scraper = LinkedInSeleniumScraper(
-                    headless=headless,
-                    output_dir=self.config.output.data_dir
-                )
-            else:
-                self.scraper = LinkedInJobScraper(
-                    output_dir=self.config.output.data_dir
-                )
+            self.scraper = LinkedInJobScraper(
+                output_dir=self.config.output.data_dir
+            )
             
-            self.logger.info(f"{self.scraper_type.title()} scraper initialized")
+            self.logger.info("Advanced scraper initialized")
             
         except Exception as e:
-            self.logger.error(f"Failed to initialize {self.scraper_type} scraper: {str(e)}")
+            self.logger.error(f"Failed to initialize scraper: {str(e)}")
             raise
     
     def _run_scraper(self, params: dict) -> list:
         self.logger.info(f"Starting scrape: {params}")
         
-        print(f"\n🚀 Starting {self.scraper_type} scrape:")
+        print(f"\n🚀 Starting advanced scrape:")
         print(f"   Keywords: {params['keywords']}")
         print(f"   Location: {params['location'] or 'Any'}")
         print(f"   Max pages: {params['max_pages']}")
@@ -204,8 +170,8 @@ class ScraperManager:
         
         if csv_saved and json_saved:
             print(f"\n💾 Files saved to '{self.config.output.data_dir}' directory:")
-            print(f"   - basic_linkedin_jobs.csv")
-            print(f"   - basic_linkedin_jobs.json")
+            print(f"   - linkedin_jobs_2025.csv")
+            print(f"   - linkedin_jobs_2025.json")
         
         # Show summary
         self.scraper.print_summary()
@@ -222,9 +188,9 @@ class ScraperManager:
         
         print("\n💡 Consider:")
         print("   • Using broader search terms")
-        print("   • Trying the Selenium version for better results")
         print("   • Checking your internet connection")
         print("   • Waiting a few minutes before trying again")
+        print("   • The advanced scraper uses intelligent rate limiting")
     
     def _offer_file_actions(self):
         # Optional: Add functionality to open files or perform additional actions
@@ -252,11 +218,6 @@ Examples:
     parser.add_argument('-p', '--max-pages', type=int, default=3,
                         help='Maximum number of pages to scrape (default: 3)')
     
-    parser.add_argument('-s', '--scraper', choices=['basic', 'selenium'], default='basic',
-                        help='Scraper type to use (default: basic)')
-    
-    parser.add_argument('--headless', type=str, choices=['true', 'false'], default='true',
-                        help='Run Selenium in headless mode (default: true)')
     
     parser.add_argument('-c', '--config', type=str,
                         help='Path to custom configuration file')
@@ -264,7 +225,7 @@ Examples:
     parser.add_argument('-i', '--interactive', action='store_true',
                         help='Run in interactive mode')
     
-    parser.add_argument('--version', action='version', version='LinkedIn Job Scraper v2.0')
+    parser.add_argument('--version', action='version', version='LinkedIn Job Scraper 2025 Edition v3.0')
     
     return parser
 
@@ -272,11 +233,8 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     
-    # Convert headless string to boolean
-    args.headless = args.headless.lower() == 'true'
-    
     try:
-        manager = ScraperManager(scraper_type=args.scraper, config_file=args.config)
+        manager = ScraperManager(config_file=args.config)
         
         if args.interactive:
             manager.run_interactive()
