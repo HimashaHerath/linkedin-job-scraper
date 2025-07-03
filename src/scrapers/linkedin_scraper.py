@@ -103,6 +103,24 @@ class HarvestingConfiguration:
     extract_company_size: bool = True
     extract_job_insights: bool = True
     extract_skills: bool = True
+    
+    # Enhanced data extraction settings
+    extract_detailed_description: bool = True
+    extract_job_requirements: bool = True
+    extract_job_responsibilities: bool = True
+    extract_benefits_info: bool = True
+    extract_company_culture: bool = True
+    extract_enhanced_applicant_count: bool = True
+    extract_application_type: bool = True
+    extract_job_urgency: bool = True
+    extract_experience_level: bool = True
+    extract_employment_type: bool = True
+    extract_remote_work_option: bool = True
+    extract_company_intelligence: bool = True
+    
+    # Individual job page extraction (requires additional HTTP requests)
+    enable_individual_job_page_extraction: bool = False
+    max_individual_pages_to_extract: int = 10
 
 
 class HumanBehaviorSimulator:
@@ -454,7 +472,123 @@ class EnhancedLinkedInJobHarvester:
             '.job-search-card__subtitle-wrapper',
             '.applicant-count',
             '.num-applicants',
-            '[data-cy="applicant-count"]'
+            '[data-cy="applicant-count"]',
+            '.num-applicants__caption',
+            '.jobs-unified-top-card__job-insight',
+            '.jobs-unified-top-card__subtitle-secondary-grouping'
+        ]
+    }
+
+    # Enhanced selectors for detailed job data extraction
+    DETAILED_EXTRACTION_SELECTORS = {
+        'job_description': [
+            '.show-more-less-html__markup',
+            '.description__text .show-more-less-html',
+            '.jobs-description__content',
+            '.jobs-box__html-content',
+            '[data-cy="job-description"]',
+            '.job-description',
+            '.description-module'
+        ],
+        'job_requirements': [
+            '.jobs-description__content ul',
+            '.description__text ul',
+            '.job-criteria-list',
+            '.job-requirements',
+            '[data-cy="job-requirements"]'
+        ],
+        'job_responsibilities': [
+            '.jobs-description__content',
+            '.description__text',
+            '.job-responsibilities',
+            '[data-cy="job-responsibilities"]'
+        ],
+        'enhanced_salary': [
+            '.jobs-unified-top-card__job-insight--highlight',
+            '.salary',
+            '.jobs-unified-top-card__job-insight[data-test-id*="salary"]',
+            '.compensation-insights',
+            '.salary-insights'
+        ],
+        'benefits_info': [
+            '.jobs-benefits',
+            '.job-benefits',
+            '.benefits-list',
+            '.job-criteria[data-cy="benefits"]',
+            '.jobs-description__content .benefits'
+        ],
+        'company_culture': [
+            '.jobs-company__inline-information',
+            '.company-info',
+            '.org-about-us__description',
+            '.company-overview'
+        ],
+        'enhanced_applicant_count': [
+            '.jobs-unified-top-card__subtitle-secondary-grouping',
+            '.jobs-unified-top-card__job-insight',
+            '.num-applicants__caption',
+            '.applicant-count-text',
+            '.jobs-unified-top-card__applicant-count'
+        ],
+        'application_type': [
+            '.jobs-apply-button',
+            '.jobs-apply-button--top-card',
+            '[data-cy="apply-button"]',
+            '.easy-apply-button',
+            '.jobs-s-apply'
+        ],
+        'job_urgency_indicators': [
+            '.jobs-unified-top-card__job-insight--highlight',
+            '.job-posting-badge',
+            '.hiring-insight',
+            '.actively-recruiting',
+            '.promoted-indicator'
+        ],
+        'experience_level': [
+            '.jobs-unified-top-card__job-insight',
+            '.job-criteria .job-criteria__text',
+            '.description__job-criteria-text',
+            '.experience-level'
+        ],
+        'employment_type': [
+            '.jobs-unified-top-card__job-insight',
+            '.job-criteria .job-criteria__text',
+            '.description__job-criteria-text',
+            '.employment-type'
+        ],
+        'remote_work_option': [
+            '.jobs-unified-top-card__job-insight',
+            '.job-criteria .job-criteria__text',
+            '.remote-work-indicator',
+            '.work-location-type'
+        ],
+        'company_size': [
+            '.org-top-card__primary-content',
+            '.company-size',
+            '.org-about-us__item',
+            '.jobs-company__inline-information'
+        ],
+        'company_industry': [
+            '.org-top-card__primary-content',
+            '.company-industry',
+            '.org-about-us__item',
+            '.jobs-company__inline-information'
+        ],
+        'company_logo': [
+            '.org-top-card__logo img',
+            '.company-logo img',
+            '.jobs-company__box img',
+            '.entity-image'
+        ],
+        'company_headquarters': [
+            '.org-about-us__item',
+            '.company-headquarters',
+            '.org-locations'
+        ],
+        'company_website': [
+            '.org-about-us__item a',
+            '.company-website',
+            '.org-about-us__website'
         ]
     }
     
@@ -935,6 +1069,11 @@ class EnhancedLinkedInJobHarvester:
         # Extract additional metadata
         job_data.update(self._extract_enhanced_metadata(job_card))
         
+        # Extract detailed job information if enabled
+        if self.config.extract_detailed_description or self.config.extract_job_requirements:
+            detailed_data = self._extract_detailed_job_information(job_card, job_data.get('job_url'))
+            job_data.update(detailed_data)
+        
         # Add extraction metadata
         job_data.update({
             'harvested_at': datetime.now().isoformat(),
@@ -1049,6 +1188,57 @@ class EnhancedLinkedInJobHarvester:
         )
         if applicant_info and 'applicant' in applicant_info.lower():
             metadata['applicant_count'] = applicant_info
+        
+        # Enhanced applicant count extraction
+        if self.config.extract_enhanced_applicant_count:
+            enhanced_applicant = self._extract_with_selector_fallbacks(
+                element, self.DETAILED_EXTRACTION_SELECTORS['enhanced_applicant_count']
+            )
+            if enhanced_applicant:
+                metadata['enhanced_applicant_count'] = enhanced_applicant
+        
+        # Extract application type
+        if self.config.extract_application_type:
+            app_type = self._extract_application_type(element)
+            if app_type:
+                metadata['application_type'] = app_type
+        
+        # Extract job urgency indicators
+        if self.config.extract_job_urgency:
+            urgency = self._extract_with_selector_fallbacks(
+                element, self.DETAILED_EXTRACTION_SELECTORS['job_urgency_indicators']
+            )
+            if urgency:
+                metadata['job_urgency'] = urgency
+        
+        # Extract experience level
+        if self.config.extract_experience_level:
+            exp_level = self._extract_with_selector_fallbacks(
+                element, self.DETAILED_EXTRACTION_SELECTORS['experience_level']
+            )
+            if exp_level:
+                metadata['experience_level'] = exp_level
+        
+        # Extract employment type
+        if self.config.extract_employment_type:
+            emp_type = self._extract_with_selector_fallbacks(
+                element, self.DETAILED_EXTRACTION_SELECTORS['employment_type']
+            )
+            if emp_type:
+                metadata['employment_type'] = emp_type
+        
+        # Extract remote work option
+        if self.config.extract_remote_work_option:
+            remote_work = self._extract_with_selector_fallbacks(
+                element, self.DETAILED_EXTRACTION_SELECTORS['remote_work_option']
+            )
+            if remote_work:
+                metadata['remote_work_option'] = remote_work
+        
+        # Extract company intelligence data
+        if self.config.extract_company_intelligence:
+            company_data = self._extract_company_intelligence(element)
+            metadata.update(company_data)
         
         return metadata
     
@@ -1167,10 +1357,30 @@ class EnhancedLinkedInJobHarvester:
         try:
             file_path = self.output_directory / filename
             
-            # Define comprehensive fieldnames
+            # Define comprehensive fieldnames including enhanced extraction
             fieldnames = [
+                # Core job information
                 'title', 'company', 'location', 'posted_date', 'job_url',
+                
+                # Basic metadata
                 'salary_info', 'applicant_count', 'job_insights',
+                
+                # Enhanced extraction fields
+                'job_description', 'job_requirements', 'job_responsibilities',
+                'benefits_info', 'company_culture', 'enhanced_salary_info',
+                'enhanced_applicant_count', 'application_type', 'job_urgency',
+                'experience_level', 'employment_type', 'remote_work_option',
+                
+                # Company intelligence
+                'company_size', 'company_industry', 'company_logo_url',
+                'company_headquarters', 'company_website',
+                
+                # Structured data from JSON-LD
+                'structured_title', 'structured_description', 'structured_salary',
+                'structured_company', 'structured_location', 'structured_employment_type',
+                'structured_work_location', 'full_job_description', 'job_criteria',
+                
+                # System metadata
                 'harvested_at', 'harvester_version', 'data_source_region',
                 'extraction_method', 'data_quality_score'
             ]
@@ -1180,10 +1390,20 @@ class EnhancedLinkedInJobHarvester:
                 writer.writeheader()
                 
                 for job in self.harvested_jobs_data:
-                    # Handle list fields
+                    # Handle complex data types for CSV compatibility
                     job_copy = job.copy()
-                    if isinstance(job_copy.get('job_insights'), list):
-                        job_copy['job_insights'] = '; '.join(job_copy['job_insights'])
+                    
+                    # Handle list fields
+                    list_fields = ['job_insights', 'job_requirements']
+                    for field in list_fields:
+                        if isinstance(job_copy.get(field), list):
+                            job_copy[field] = '; '.join(str(item) for item in job_copy[field])
+                    
+                    # Handle dictionary fields
+                    dict_fields = ['structured_salary', 'structured_company', 'structured_location', 'job_criteria']
+                    for field in dict_fields:
+                        if isinstance(job_copy.get(field), dict):
+                            job_copy[field] = json.dumps(job_copy[field], ensure_ascii=False)
                     
                     # Filter to fieldnames only
                     filtered_job = {k: v for k, v in job_copy.items() if k in fieldnames}
@@ -1316,6 +1536,283 @@ class EnhancedLinkedInJobHarvester:
                 print(f"  {stat.replace('_', ' ').title()}: {value}")
         
         print("\n" + "=" * 80)
+    
+    def _extract_detailed_job_information(self, job_card, job_url: Optional[str]) -> Dict:
+        """
+        Extract detailed job information from job cards and optionally from individual job pages.
+        
+        Args:
+            job_card: BeautifulSoup element representing a job card
+            job_url: URL of the individual job page
+            
+        Returns:
+            Dictionary containing detailed job information
+        """
+        detailed_data = {}
+        
+        # Extract detailed information from the job card first
+        if self.config.extract_detailed_description:
+            description = self._extract_with_selector_fallbacks(
+                job_card, self.DETAILED_EXTRACTION_SELECTORS['job_description']
+            )
+            if description:
+                detailed_data['job_description'] = description
+        
+        if self.config.extract_job_requirements:
+            requirements = self._extract_job_requirements(job_card)
+            if requirements:
+                detailed_data['job_requirements'] = requirements
+        
+        if self.config.extract_job_responsibilities:
+            responsibilities = self._extract_with_selector_fallbacks(
+                job_card, self.DETAILED_EXTRACTION_SELECTORS['job_responsibilities']
+            )
+            if responsibilities:
+                detailed_data['job_responsibilities'] = responsibilities
+        
+        if self.config.extract_benefits_info:
+            benefits = self._extract_with_selector_fallbacks(
+                job_card, self.DETAILED_EXTRACTION_SELECTORS['benefits_info']
+            )
+            if benefits:
+                detailed_data['benefits_info'] = benefits
+        
+        if self.config.extract_company_culture:
+            culture = self._extract_with_selector_fallbacks(
+                job_card, self.DETAILED_EXTRACTION_SELECTORS['company_culture']
+            )
+            if culture:
+                detailed_data['company_culture'] = culture
+        
+        # Enhanced salary extraction
+        enhanced_salary = self._extract_with_selector_fallbacks(
+            job_card, self.DETAILED_EXTRACTION_SELECTORS['enhanced_salary']
+        )
+        if enhanced_salary:
+            detailed_data['enhanced_salary_info'] = enhanced_salary
+        
+        return detailed_data
+    
+    def _extract_application_type(self, element) -> Optional[str]:
+        """
+        Extract application type (Easy Apply vs External).
+        
+        Args:
+            element: BeautifulSoup element to extract from
+            
+        Returns:
+            Application type string or None
+        """
+        for selector in self.DETAILED_EXTRACTION_SELECTORS['application_type']:
+            try:
+                app_element = element.select_one(selector)
+                if app_element:
+                    # Check for Easy Apply indicators
+                    if 'easy-apply' in app_element.get('class', []) or \
+                       'easy apply' in app_element.get_text(strip=True).lower():
+                        return 'Easy Apply'
+                    else:
+                        return 'External Application'
+            except Exception:
+                continue
+        return None
+    
+    def _extract_job_requirements(self, element) -> Optional[List[str]]:
+        """
+        Extract job requirements as a list.
+        
+        Args:
+            element: BeautifulSoup element to extract from
+            
+        Returns:
+            List of job requirements or None
+        """
+        requirements = []
+        
+        for selector in self.DETAILED_EXTRACTION_SELECTORS['job_requirements']:
+            try:
+                req_elements = element.select(selector)
+                if req_elements:
+                    for req_element in req_elements:
+                        # Extract list items
+                        if req_element.name == 'ul':
+                            list_items = req_element.find_all('li')
+                            for item in list_items:
+                                text = item.get_text(strip=True)
+                                if text and len(text) > 5:  # Filter out short/empty items
+                                    requirements.append(text)
+                        else:
+                            text = req_element.get_text(strip=True)
+                            if text and len(text) > 5:
+                                requirements.append(text)
+                
+                if requirements:
+                    break  # Stop after finding requirements
+                    
+            except Exception:
+                continue
+        
+        return requirements if requirements else None
+    
+    def _extract_company_intelligence(self, element) -> Dict:
+        """
+        Extract company intelligence data.
+        
+        Args:
+            element: BeautifulSoup element to extract from
+            
+        Returns:
+            Dictionary containing company intelligence data
+        """
+        company_data = {}
+        
+        # Extract company size
+        company_size = self._extract_with_selector_fallbacks(
+            element, self.DETAILED_EXTRACTION_SELECTORS['company_size']
+        )
+        if company_size:
+            company_data['company_size'] = company_size
+        
+        # Extract company industry
+        industry = self._extract_with_selector_fallbacks(
+            element, self.DETAILED_EXTRACTION_SELECTORS['company_industry']
+        )
+        if industry:
+            company_data['company_industry'] = industry
+        
+        # Extract company logo URL
+        logo_elements = element.select(self.DETAILED_EXTRACTION_SELECTORS['company_logo'][0])
+        if logo_elements:
+            try:
+                logo_url = logo_elements[0].get('src') or logo_elements[0].get('data-src')
+                if logo_url:
+                    company_data['company_logo_url'] = logo_url
+            except Exception:
+                pass
+        
+        # Extract company headquarters
+        headquarters = self._extract_with_selector_fallbacks(
+            element, self.DETAILED_EXTRACTION_SELECTORS['company_headquarters']
+        )
+        if headquarters:
+            company_data['company_headquarters'] = headquarters
+        
+        # Extract company website
+        website_elements = element.select(self.DETAILED_EXTRACTION_SELECTORS['company_website'][0])
+        if website_elements:
+            try:
+                website_url = website_elements[0].get('href')
+                if website_url and 'linkedin.com' not in website_url:
+                    company_data['company_website'] = website_url
+            except Exception:
+                pass
+        
+        return company_data
+    
+    async def _extract_from_individual_job_page(self, job_url: str) -> Dict:
+        """
+        Extract detailed information from an individual job page.
+        
+        Args:
+            job_url: URL of the job page to extract from
+            
+        Returns:
+            Dictionary containing detailed job page information
+        """
+        if not self.config.enable_individual_job_page_extraction:
+            return {}
+        
+        try:
+            # Add delay before individual page request
+            await asyncio.sleep(self.behavior_simulator.generate_human_like_delay(2.0))
+            
+            response = await self.http_client.get(job_url)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                detailed_data = {}
+                
+                # Extract JSON-LD structured data if available
+                json_scripts = soup.find_all('script', type='application/ld+json')
+                for script in json_scripts:
+                    try:
+                        json_data = json.loads(script.string)
+                        if json_data.get('@type') == 'JobPosting':
+                            detailed_data.update(self._parse_json_ld_job_data(json_data))
+                            break
+                    except Exception:
+                        continue
+                
+                # Extract detailed job description
+                job_desc = self._extract_with_selector_fallbacks(
+                    soup, self.DETAILED_EXTRACTION_SELECTORS['job_description']
+                )
+                if job_desc:
+                    detailed_data['full_job_description'] = job_desc
+                
+                # Extract job criteria from individual page
+                criteria_elements = soup.select('.description__job-criteria-list li')
+                if criteria_elements:
+                    criteria = {}
+                    for criterion in criteria_elements:
+                        try:
+                            header = criterion.select_one('.description__job-criteria-subheader')
+                            text = criterion.select_one('.description__job-criteria-text')
+                            if header and text:
+                                criteria[header.get_text(strip=True)] = text.get_text(strip=True)
+                        except Exception:
+                            continue
+                    if criteria:
+                        detailed_data['job_criteria'] = criteria
+                
+                return detailed_data
+                
+        except Exception as e:
+            logger.warning(f"Failed to extract from individual job page {job_url}: {str(e)}")
+        
+        return {}
+    
+    def _parse_json_ld_job_data(self, json_data: Dict) -> Dict:
+        """
+        Parse JSON-LD structured job data.
+        
+        Args:
+            json_data: JSON-LD data dictionary
+            
+        Returns:
+            Parsed job data dictionary
+        """
+        parsed_data = {}
+        
+        # Extract structured data fields
+        if 'title' in json_data:
+            parsed_data['structured_title'] = json_data['title']
+        
+        if 'description' in json_data:
+            parsed_data['structured_description'] = json_data['description']
+        
+        if 'baseSalary' in json_data:
+            salary_data = json_data['baseSalary']
+            if isinstance(salary_data, dict):
+                parsed_data['structured_salary'] = salary_data
+        
+        if 'hiringOrganization' in json_data:
+            org_data = json_data['hiringOrganization']
+            if isinstance(org_data, dict):
+                parsed_data['structured_company'] = org_data
+        
+        if 'jobLocation' in json_data:
+            location_data = json_data['jobLocation']
+            if isinstance(location_data, dict):
+                parsed_data['structured_location'] = location_data
+        
+        if 'employmentType' in json_data:
+            parsed_data['structured_employment_type'] = json_data['employmentType']
+        
+        if 'workLocation' in json_data:
+            parsed_data['structured_work_location'] = json_data['workLocation']
+        
+        return parsed_data
 
 
 # Backward compatibility wrapper
